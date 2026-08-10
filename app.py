@@ -55,7 +55,6 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     
     style_celula = ParagraphStyle('EstiloCelula', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
     style_celula_cab = ParagraphStyle('EstiloCelulaCab', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
-    style_alerta = ParagraphStyle('EstiloAlerta', parent=estilos['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#991B1B'))
 
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     
@@ -85,7 +84,6 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     ]
 
     for nome_pilar, val, meta in shares:
-        # Criando uma barra de progresso visual simulada com caracteres block
         blocos_cheios = int(min(val, 100) / 5)
         blocos_vazios = 20 - blocos_cheios
         barra_visual = "█" * blocos_cheios + "░" * blocos_vazios
@@ -148,8 +146,25 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     elementos.append(t_merch)
     elementos.append(Spacer(1, 10))
 
+    # Observações da Promotora (Se preenchido)
+    if dados_completos['observacoes']:
+        elementos.append(Paragraph("<b>4. OBSERVAÇÕES / COMENTÁRIOS DA PROMOTORA</b>", estilos['Heading3']))
+        data_obs = [[Paragraph(dados_completos['observacoes'], style_celula)]]
+        t_obs = Table(data_obs, colWidths=[560])
+        t_obs.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F3F4F6')),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')),
+            ('VALIGN', (0,0), (-1,-1), 'TOP'),
+            ('TOPPADDING', (0,0), (-1,-1), 6),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+            ('LEFTPADDING', (0,0), (-1,-1), 6),
+            ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        ]))
+        elementos.append(t_obs)
+        elementos.append(Spacer(1, 10))
+
     # Relatório de Oportunidades de Melhoria (Automático)
-    elementos.append(Paragraph("<b>4. PLANO DE AÇÃO E OPORTUNIDADES DE MELHORIA (FEEDBACK AUTOMÁTICO)</b>", estilos['Heading3']))
+    elementos.append(Paragraph("<b>5. PLANO DE AÇÃO E OPORTUNIDADES DE MELHORIA (FEEDBACK AUTOMÁTICO)</b>", estilos['Heading3']))
     
     melhorias = []
     if dados_completos['share_cao'] < 30.0:
@@ -324,6 +339,11 @@ else:
             qtd_pontos_extras = st.number_input("Quantidade de Pontos Extras encontrados:", min_value=0, max_value=10, value=0)
 
             st.markdown("---")
+            # --- MÓDULO 6: OBSERVAÇÕES DA PROMOTORA ---
+            st.subheader("6. Observações e Comentários")
+            observacoes_promotora = st.text_area("Digite aqui qualquer observação relevante sobre o PDV:", placeholder="Ex: Cliente pediu reposição de estoque, gerente ausente hoje, etc.")
+
+            st.markdown("---")
             # --- BOTÃO DE FINALIZAÇÃO, CÁLCULO E ENVIO ---
             if st.button("Finalizar, Salvar e Enviar Auditoria", type="primary"):
                 nota_total = 0.0
@@ -391,7 +411,8 @@ else:
                     'fluxo_vet': fluxo_vet,
                     'materiais_ativos': materiais_ativos_lista,
                     'conservacao': conservacao,
-                    'qtd_extras': qtd_pontos_extras
+                    'qtd_extras': qtd_pontos_extras,
+                    'observacoes': observacoes_promotora.strip()
                 }
 
                 data_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
@@ -401,7 +422,7 @@ else:
                 with st.spinner("Salvando na planilha, gerando PDF executivo e enviando e-mail..."):
                     # 1. Salvar no Google Sheets
                     salvar_no_google_sheets(linha_dados)
-                    # 2. Gerar PDF Enriquecido
+                    # 2. Gerar PDF Enriquecido com Observações
                     pdf_gerado = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, endereco_loja, dados_completos, nota_total)
                     # 3. Enviar E-mail
                     email_enviado = enviar_email_auditoria(f"🐾 RELATÓRIO SHELF SPACE: {loja_selecionada}", pdf_gerado)
