@@ -34,7 +34,8 @@ df_clientes = load_clients()
 def salvar_no_google_sheets(dados_auditoria):
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
         sheet = client.open("Historico_Auditorias_RoyalCanin").sheet1
@@ -44,44 +45,160 @@ def salvar_no_google_sheets(dados_auditoria):
         print(f"Erro ao salvar no Google Sheets: {e}")
         return False
 
-# --- FUNÇÃO DE GERAÇÃO DE PDF ---
-def gerar_pdf_auditoria(promotora, loja, cidade, detalhes_auditoria, nota_total):
+# --- FUNÇÃO DE GERAÇÃO DE PDF ENRIQUECIDO ---
+def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota_total):
     loja_limpa = "".join([c for c in loja if c.isalnum() or c in (' ', '_', '-')]).strip().replace(' ', '_')
     nome_arquivo = f"Auditoria_ShelfSpace_{loja_limpa}.pdf"
 
-    doc = SimpleDocTemplate(nome_arquivo, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    doc = SimpleDocTemplate(nome_arquivo, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
     elementos, estilos = [], getSampleStyleSheet()
     
-    style_celula = ParagraphStyle('EstiloCelula', parent=estilos['Normal'], fontSize=9, leading=12, textColor=colors.HexColor('#1F2937'))
-    style_celula_cab = ParagraphStyle('EstiloCelulaCab', parent=estilos['Normal'], fontSize=10, leading=13, textColor=colors.white, fontName="Helvetica-Bold")
+    style_celula = ParagraphStyle('EstiloCelula', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
+    style_celula_cab = ParagraphStyle('EstiloCelulaCab', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
+    style_alerta = ParagraphStyle('EstiloAlerta', parent=estilos['Normal'], fontSize=8, leading=11, textColor=colors.HexColor('#991B1B'))
 
     agora = datetime.now().strftime("%d/%m/%Y %H:%M")
     
-    elementos.append(Paragraph("<b>RELATÓRIO DE AUDITORIA - SHELF SPACE</b>", estilos['Title']))
-    elementos.append(Spacer(1, 10))
+    # Cabeçalho
+    elementos.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
+    elementos.append(Spacer(1, 5))
     elementos.append(Paragraph(f"<b>LOJA:</b> {loja} | <b>CIDADE:</b> {cidade}", estilos['Normal']))
+    elementos.append(Paragraph(f"<b>ENDEREÇO:</b> {endereco}", estilos['Normal']))
     elementos.append(Paragraph(f"<b>PROMOTORA:</b> {promotora} | <b>DATA/HORA:</b> {agora}", estilos['Normal']))
     elementos.append(Paragraph(f"<b>NOTA FINAL DO PDV:</b> <font color='#1E3A8A'><b>{nota_total:.2f} / 10.0 pts</b></font>", estilos['Heading2']))
-    elementos.append(Spacer(1, 15))
+    elementos.append(Spacer(1, 10))
 
-    elementos.append(Paragraph("<b>DETALHAMENTO DA PONTUAÇÃO</b>", estilos['Heading3']))
+    # Tabela 1: Resumo de Shares com Gráfico de Barras em Texto/Tabela
+    elementos.append(Paragraph("<b>1. PERFORMANCE DE SHARE POR PILAR</b>", estilos['Heading3']))
     
-    data_tabela = [[Paragraph("<b>Critério / Pilar</b>", style_celula_cab), Paragraph("<b>Resultado</b>", style_celula_cab)]]
-    for item in detalhes_auditoria:
-        partes = item.split(":")
-        criterio = partes[0]
-        pontos = partes[1] if len(partes) > 1 else ""
-        data_tabela.append([Paragraph(criterio, style_celula), Paragraph(pontos, style_celula)])
+    data_share = [[
+        Paragraph("<b>Pilar</b>", style_celula_cab),
+        Paragraph("<b>Share Atual</b>", style_celula_cab),
+        Paragraph("<b>Meta</b>", style_celula_cab),
+        Paragraph("<b>Progresso Visual (Share vs Meta)</b>", style_celula_cab)
+    ]]
 
-    t1 = Table(data_tabela, colWidths=[350, 150])
-    t1.setStyle(TableStyle([
+    shares = [
+        ("Linha Cão", dados_completos['share_cao'], 30.0),
+        ("Linha Gato", dados_completos['share_gato'], 35.0),
+        ("Linha Veterinária", dados_completos['share_vet'], 50.0)
+    ]
+
+    for nome_pilar, val, meta in shares:
+        # Criando uma barra de progresso visual simulada com caracteres block
+        blocos_cheios = int(min(val, 100) / 5)
+        blocos_vazios = 20 - blocos_cheios
+        barra_visual = "█" * blocos_cheios + "░" * blocos_vazios
+        cor_txt = "green" if val >= meta else "red"
+        
+        data_share.append([
+            Paragraph(nome_pilar, style_celula),
+            Paragraph(f"<font color='{cor_txt}'><b>{val:.1f}%</b></font>", style_celula),
+            Paragraph(f"{meta:.1f}%", style_celula),
+            Paragraph(f"<font name='Courier' size=8>{barra_visual}</font>", style_celula)
+        ])
+
+    t_share = Table(data_share, colWidths=[100, 70, 50, 340])
+    t_share.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
-    elementos.append(t1)
+    elementos.append(t_share)
+    elementos.append(Spacer(1, 10))
+
+    # Tabela 2: Execução e Pilares
+    elementos.append(Paragraph("<b>2. CHECKLIST DE EXECUÇÃO (PLANOGRAMA & FLUXO)</b>", estilos['Heading3']))
+    data_exec = [
+        [Paragraph("<b>Pilar / Categoria</b>", style_celula_cab), Paragraph("<b>Planograma?</b>", style_celula_cab), Paragraph("<b>Abertura de Fluxo?</b>", style_celula_cab), Paragraph("<b>Regra Específica</b>", style_celula_cab)],
+        [Paragraph("Linha Cão", style_celula), Paragraph(dados_completos['plano_cao'], style_celula), Paragraph(dados_completos['fluxo_cao'], style_celula), Paragraph("Meta de Frentes >= 30%", style_celula)],
+        [Paragraph("Linha Gato", style_celula), Paragraph(dados_completos['plano_gato'], style_celula), Paragraph(dados_completos['fluxo_gato'], style_celula), Paragraph(f"Super Premium Separada: {dados_completos['sep_fhn']}", style_celula)],
+        [Paragraph("Linha Veterinária", style_celula), Paragraph(dados_completos['plano_vet'], style_celula), Paragraph(dados_completos['fluxo_vet'], style_celula), Paragraph("Meta de Frentes >= 50%", style_celula)],
+    ]
+    t_exec = Table(data_exec, colWidths=[110, 80, 95, 275])
+    t_exec.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#059669')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elementos.append(t_exec)
+    elementos.append(Spacer(1, 10))
+
+    # Tabela 3: Merchandising e Pontos Extras
+    elementos.append(Paragraph("<b>3. MERCHANDISING E PONTOS EXTRAS</b>", estilos['Heading3']))
+    materiais_str = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material encontrado"
+    data_merch = [
+        [Paragraph("<b>Descrição dos Elementos</b>", style_celula_cab), Paragraph("<b>Status / Quantidade</b>", style_celula_cab)],
+        [Paragraph("Materiais de Merchandising Presentes", style_celula), Paragraph(materiais_str, style_celula)],
+        [Paragraph("Estado de Conservação dos Materiais", style_celula), Paragraph(dados_completos['conservacao'], style_celula)],
+        [Paragraph("Quantidade de Pontos Extras no PDV", style_celula), Paragraph(str(dados_completos['qtd_extras']), style_celula)],
+    ]
+    t_merch = Table(data_merch, colWidths=[200, 360])
+    t_merch.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elementos.append(t_merch)
+    elementos.append(Spacer(1, 10))
+
+    # Relatório de Oportunidades de Melhoria (Automático)
+    elementos.append(Paragraph("<b>4. PLANO DE AÇÃO E OPORTUNIDADES DE MELHORIA (FEEDBACK AUTOMÁTICO)</b>", estilos['Heading3']))
+    
+    melhorias = []
+    if dados_completos['share_cao'] < 30.0:
+        melhorias.append("• <b>Linha Cão:</b> O share atual está abaixo da meta de 30%. É necessário negociar mais espaço na gôndola e recuperar frentes frente aos concorrentes.")
+    if dados_completos['plano_cao'] == "Não":
+        melhorias.append("• <b>Planograma Cão:</b> A linha não está respeitando o planograma oficial. Ajustar a disposição dos produtos.")
+    if dados_completos['fluxo_cao'] == "Não":
+        melhorias.append("• <b>Fluxo Cão:</b> A Royal Canin não está abrindo o fluxo principal. Realizar abordagem com o gerente da loja.")
+    
+    if dados_completos['share_gato'] < 35.0:
+        melhorias.append("• <b>Linha Gato:</b> O share está abaixo de 35%. Expandir frentes de focado em gatos.")
+    if dados_completos['plano_gato'] == "Não":
+        melhorias.append("• <b>Planograma Gato:</b> Ausente no planograma estabelecido. Necessário reorganizar a seção.")
+    if dados_completos['fluxo_gato'] == "Não":
+        melhorias.append("• <b>Fluxo Gato:</b> Royal Canin precisa abrir o fluxo de gatos no PDV.")
+    if dados_completos['sep_fhn'] == "Não":
+        melhorias.append("• <b>Super Premium Cat:</b> A linha Super Premium Cat não está separada da FHN. Executar o bolsão correto.")
+
+    if dados_completos['share_vet'] < 50.0:
+        melhorias.append("• <b>Linha Veterinária:</b> O share está abaixo de 50%. Fortalecer a presença de tratamento e prescrição.")
+    if dados_completos['plano_vet'] == "Não":
+        melhorias.append("• <b>Planograma Vet:</b> Linha Veterinária fora do planograma padrão.")
+    if dados_completos['fluxo_vet'] == "Não":
+        melhorias.append("• <b>Fluxo Vet:</b> Necessário abrir fluxo para os produtos veterinários.")
+
+    if dados_completos['conservacao'] == "Não":
+        melhorias.append("• <b>Conservação:</b> Os materiais de merchandising apresentam problemas de conservação e precisam ser substituídos ou higienizados.")
+    if len(dados_completos['materiais_ativos']) < 2:
+        melhorias.append("• <b>Merchandising:</b> Baixa presença de materiais de PDV (menos de 2 ativos). Instalar faixas, stoppers ou displays carona.")
+    if dados_completos['qtd_extras'] == 0:
+        melhorias.append("• <b>Pontos Extras:</b> Nenhum ponto extra localizado na loja. Negociar pontas de gôndola ou ilhas promocionais.")
+
+    if not melhorias:
+        melhorias.append("• <b>Parabéns!</b> Excelente execução no PDV. Todos os pilares, shares e materiais estão atingindo ou superando as metas estabelecidas.")
+
+    texto_melhorias = "<br/>".join(melhorias)
+    
+    data_melhoria = [[Paragraph(texto_melhorias, style_celula)]]
+    t_melhoria = Table(data_melhoria, colWidths=[560])
+    t_melhoria.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#FEF3C7')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D97706')),
+        ('VALIGN', (0,0), (-1,-1), 'TOP'),
+        ('TOPPADDING', (0,0), (-1,-1), 6),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ('LEFTPADDING', (0,0), (-1,-1), 6),
+        ('RIGHTPADDING', (0,0), (-1,-1), 6),
+    ]))
+    elementos.append(t_melhoria)
 
     doc.build(elementos)
     return nome_arquivo
@@ -144,7 +261,8 @@ else:
             
             dados_loja = df_filtrado[df_filtrado['NOME'] == loja_selecionada].iloc[0]
             cidade_loja = dados_loja.get('CIDADE', '')
-            st.info(f"📍 **Cidade:** {cidade_loja} | **Endereço:** {dados_loja.get('ENDEREÇO', '')}")
+            endereco_loja = str(dados_loja.get('ENDEREÇO', 'Endereço não informado'))
+            st.info(f"📍 **Cidade:** {cidade_loja} | **Endereço:** {endereco_loja}")
             
             st.markdown("---")
             st.subheader("3. Contagem de Frentes & Share por Pilar")
@@ -237,7 +355,8 @@ else:
                 detalhes.append(f"Pilar Vet: {p_vet} pts")
 
                 # Merchandising (Presença)
-                total_materiais = sum(1 for m in materiais if mat_presenca[m])
+                materiais_ativos_lista = [m for m in materiais if mat_presenca[m]]
+                total_materiais = len(materiais_ativos_lista)
                 p_merch = 0.0
                 if total_materiais >= 3: p_merch = 0.75
                 elif total_materiais == 2: p_merch = 0.50
@@ -258,20 +377,37 @@ else:
                 nota_total += p_extras
                 detalhes.append(f"Pontos Extras ({qtd_pontos_extras} un): {p_extras} pts")
 
+                # Dicionário completo para o PDF melhorado
+                dados_completos = {
+                    'share_cao': share_cao,
+                    'plano_cao': plano_cao,
+                    'fluxo_cao': fluxo_cao,
+                    'share_gato': share_gato,
+                    'plano_gato': plano_gato,
+                    'fluxo_gato': fluxo_gato,
+                    'sep_fhn': sep_fhn,
+                    'share_vet': share_vet,
+                    'plano_vet': plano_vet,
+                    'fluxo_vet': fluxo_vet,
+                    'materiais_ativos': materiais_ativos_lista,
+                    'conservacao': conservacao,
+                    'qtd_extras': qtd_pontos_extras
+                }
+
                 data_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 linha_dados = [data_atual, promotora, cidade_loja, loja_selecionada, f"{nota_total:.2f}"]
 
                 # Processar salvamento e disparo
-                with st.spinner("Salvando na planilha, gerando PDF e enviando e-mail..."):
+                with st.spinner("Salvando na planilha, gerando PDF executivo e enviando e-mail..."):
                     # 1. Salvar no Google Sheets
                     salvar_no_google_sheets(linha_dados)
-                    # 2. Gerar PDF
-                    pdf_gerado = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, detalhes, nota_total)
+                    # 2. Gerar PDF Enriquecido
+                    pdf_gerado = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, endereco_loja, dados_completos, nota_total)
                     # 3. Enviar E-mail
                     email_enviado = enviar_email_auditoria(f"🐾 RELATÓRIO SHELF SPACE: {loja_selecionada}", pdf_gerado)
 
                 if email_enviado:
-                    st.success("Auditoria salva na planilha, PDF gerado e e-mail enviado com sucesso!")
+                    st.success("Auditoria salva na planilha, PDF executivo gerado e e-mail enviado com sucesso!")
                     st.balloons()
                 else:
                     st.warning("Auditoria salva e PDF gerado, mas houve uma falha ao enviar o e-mail automático.")
