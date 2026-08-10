@@ -4,9 +4,9 @@ import unicodedata
 from datetime import datetime
 
 # Configuração da Página
-st.set_page_config(page_title="Auditoria Royal Canin", page_icon="🐾", layout="centered")
+st.set_page_config(page_title="Shelf Space Royal Canin", page_icon="🐾", layout="centered")
 
-st.title("🐾 Sistema de Auditoria PDV - Royal Canin")
+st.title("🐾 Shelf Space Royal Canin")
 st.markdown("---")
 
 # 1. Carregar Planilha de Clientes
