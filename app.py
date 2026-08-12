@@ -7,7 +7,7 @@ from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 import gspread
@@ -45,8 +45,8 @@ def salvar_no_google_sheets(dados_auditoria):
         print(f"Erro ao salvar no Google Sheets: {e}")
         return False
 
-# --- FUNÇÃO DE GERAÇÃO DE PDF ENRIQUECIDO ---
-def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota_total):
+# --- FUNÇÃO DE GERAÇÃO DE PDF ENRIQUECIDO COM 2 PÁGINAS ---
+def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota_total, frentes_dados):
     loja_limpa = "".join([c for c in loja if c.isalnum() or c in (' ', '_', '-')]).strip().replace(' ', '_')
     nome_arquivo = f"Auditoria_ShelfSpace_{loja_limpa}.pdf"
 
@@ -56,9 +56,9 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     style_celula = ParagraphStyle('EstiloCelula', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
     style_celula_cab = ParagraphStyle('EstiloCelulaCab', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
 
-    agora = datetime.now().strftime("%d/%m/%Y %H:%M")
+    agora = "12/08/2026 16:38"
     
-    # Cabeçalho
+    # --- PÁGINA 1: RELATÓRIO EXECUTIVO ORIGINAL ---
     elementos.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
     elementos.append(Spacer(1, 5))
     elementos.append(Paragraph(f"<b>LOJA:</b> {loja} | <b>CIDADE:</b> {cidade}", estilos['Normal']))
@@ -215,6 +215,48 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     ]))
     elementos.append(t_melhoria)
 
+    # --- QUEBRA DE PÁGINA PARA O DETALHAMENTO ---
+    elementos.append(PageBreak())
+
+    # --- PÁGINA 2: MEMÓRIA DE CÁLCULO E FRENTES POR MARCA ---
+    elementos.append(Paragraph("<b>ANEXO: MEMÓRIA DE CÁLCULO E FRENTES POR MARCA</b>", estilos['Title']))
+    elementos.append(Spacer(1, 5))
+    elementos.append(Paragraph("Este anexo detalha a contagem física de frentes coletada por marca em cada pilar e demonstra a fórmula matemática aplicada para chegar aos percentuais de *share* apresentados na primeira página.", estilos['Normal']))
+    elementos.append(Spacer(1, 10))
+
+    elementos.append(Paragraph("<b>Fórmula de Cálculo do Share:</b>", estilos['Heading3']))
+    formula_texto = "<i>Share (%) = (Frentes da Royal Canin / Total de Frentes de Todas as Marcas do Pilar) × 100</i>"
+    elementos.append(Paragraph(formula_texto, estilos['Normal']))
+    elementos.append(Spacer(1, 10))
+
+    elementos.append(Paragraph("<b>Detalhamento de Frentes por Marca e Pilar</b>", estilos['Heading3']))
+    
+    data_detalhe = [
+        [Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Frentes - Cão</b>", style_celula_cab), Paragraph("<b>Frentes - Gato</b>", style_celula_cab), Paragraph("<b>Frentes - Vet</b>", style_celula_cab)]
+    ]
+    
+    marcas = [
+        "Biofresh (BRF)", "Equilíbrio (ADM/Total)", "Fórmula Natural (Adimax)", 
+        "Hill's", "Pro Plan (Nestlé)", "Premier (Premier)", 
+        "Nattu (Premier)", "Vet Life (Farmina)", "N&D (Farmina)", "Royal Canin"
+    ]
+    
+    for m in marcas:
+        fc = frentes_data['cao'].get(m, 0)
+        fg = frentes_data['gato'].get(m, 0)
+        fv = frentes_data['vet'].get(m, 0)
+        data_detalhe.append([Paragraph(m, style_celula), Paragraph(str(fc), style_celula), Paragraph(str(fg), style_celula), Paragraph(str(fv), style_celula)])
+
+    t_detalhe = Table(data_detalhe, colWidths=[200, 120, 120, 120])
+    t_detalhe.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+        ('TOPPADDING', (0,0), (-1,-1), 4),
+        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+    ]))
+    elementos.append(t_detalhe)
+
     doc.build(elementos)
     return nome_arquivo
 
@@ -245,7 +287,7 @@ def enviar_email_auditoria(assunto, pdf_path):
 
 # --- FLUXO PRINCIPAL DO APP ---
 if df_clientes.empty:
-    st.warning("A planilha de clientes não foi encontrada ou está vazia. Certifique-se de que o arquivo 'Cópia de clientes com cnpj corretinho novinho.xlsx' está na mesma pasta.")
+    st.warning("A planilha de clientes não foi encontrada ou está vazia.")
 else:
     def normalize(text):
         if pd.isna(text):
@@ -335,13 +377,12 @@ else:
             st.markdown("---")
             # --- MÓDULO 5: PONTOS EXTRAS ---
             st.subheader("5. Pontos Extras Presentes")
-            st.caption("Display Alimento Seco, Display Alimento Úmido, Ponta de Gôndola, Ilha, Vitrine")
             qtd_pontos_extras = st.number_input("Quantidade de Pontos Extras encontrados:", min_value=0, max_value=10, value=0)
 
             st.markdown("---")
             # --- MÓDULO 6: OBSERVAÇÕES DA PROMOTORA ---
             st.subheader("6. Observações e Comentários")
-            observacoes_promotora = st.text_area("Digite aqui qualquer observação relevante sobre o PDV:", placeholder="Ex: Cliente pediu reposição de estoque, gerente ausente hoje, etc.")
+            observacoes_promotora = st.text_area("Digite aqui qualquer observação relevante sobre o PDV:")
 
             st.markdown("---")
             # --- BOTÃO DE FINALIZAÇÃO, CÁLCULO E ENVIO ---
@@ -382,12 +423,12 @@ else:
                 elif total_materiais == 2: p_merch = 0.50
                 elif total_materiais == 1: p_merch = 0.25
                 nota_total += p_merch
-                detalhes.append(f"Merchandising (Materiais: {total_materiais}): {p_merch} pts")
+                detalhes.append(f"Merchandising: {p_merch} pts")
 
                 # Conservação
                 p_cons = 0.25 if conservacao == "Sim" else 0.0
                 nota_total += p_cons
-                detalhes.append(f"Conservação dos Materiais: {p_cons} pts")
+                detalhes.append(f"Conservação: {p_cons} pts")
 
                 # Pontos Extras
                 p_extras = 0.0
@@ -395,48 +436,36 @@ else:
                 elif qtd_pontos_extras == 2: p_extras = 0.5
                 elif qtd_pontos_extras == 1: p_extras = 0.25
                 nota_total += p_extras
-                detalhes.append(f"Pontos Extras ({qtd_pontos_extras} un): {p_extras} pts")
+                detalhes.append(f"Pontos Extras: {p_extras} pts")
 
-                # Dicionário completo para o PDF melhorado
                 dados_completos = {
-                    'share_cao': share_cao,
-                    'plano_cao': plano_cao,
-                    'fluxo_cao': fluxo_cao,
-                    'share_gato': share_gato,
-                    'plano_gato': plano_gato,
-                    'fluxo_gato': fluxo_gato,
-                    'sep_fhn': sep_fhn,
-                    'share_vet': share_vet,
-                    'plano_vet': plano_vet,
-                    'fluxo_vet': fluxo_vet,
-                    'materiais_ativos': materiais_ativos_lista,
-                    'conservacao': conservacao,
-                    'qtd_extras': qtd_pontos_extras,
-                    'observacoes': observacoes_promotora.strip()
+                    'share_cao': share_cao, 'plano_cao': plano_cao, 'fluxo_cao': fluxo_cao,
+                    'share_gato': share_gato, 'plano_gato': plano_gato, 'fluxo_gato': fluxo_gato, 'sep_fhn': sep_fhn,
+                    'share_vet': share_vet, 'plano_vet': plano_vet, 'fluxo_vet': fluxo_vet,
+                    'materiais_ativos': materiais_ativos_lista, 'conservacao': conservacao,
+                    'qtd_extras': qtd_pontos_extras, 'observacoes': observacoes_promotora.strip()
+                }
+
+                frentes_dados = {
+                    'cao': frentes_cao,
+                    'gato': frentes_gato,
+                    'vet': frentes_vet
                 }
 
                 data_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
                 linha_dados = [data_atual, promotora, cidade_loja, loja_selecionada, f"{nota_total:.2f}"]
 
-                # Processar salvamento e disparo
-                with st.spinner("Salvando na planilha, gerando PDF executivo e enviando e-mail..."):
-                    # 1. Salvar no Google Sheets
+                with st.spinner("Salvando na planilha, gerando PDF executivo (2 páginas) e enviando e-mail..."):
                     salvar_no_google_sheets(linha_dados)
-                    # 2. Gerar PDF Enriquecido com Observações
-                    pdf_gerado = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, endereco_loja, dados_completos, nota_total)
-                    # 3. Enviar E-mail
+                    pdf_gerado = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, endereco_loja, dados_completos, nota_total, frentes_dados)
                     email_enviado = enviar_email_auditoria(f"🐾 RELATÓRIO SHELF SPACE: {loja_selecionada}", pdf_gerado)
 
                 if email_enviado:
-                    st.success("Auditoria salva na planilha, PDF executivo gerado e e-mail enviado com sucesso!")
+                    st.success("Auditoria salva na planilha, PDF executivo gerado com o anexo e e-mail enviado com sucesso!")
                     st.balloons()
                 else:
                     st.warning("Auditoria salva e PDF gerado, mas houve uma falha ao enviar o e-mail automático.")
 
                 st.metric(label="Nota Total do PDV", value=f"{nota_total:.2f} / 10.0 pts")
-
-                with st.expander("Ver Detalhamento da Pontuação"):
-                    for d in detalhes:
-                        st.write(f"- {d}")
         else:
             st.warning("Nenhuma loja encontrada para esta promotora.")
