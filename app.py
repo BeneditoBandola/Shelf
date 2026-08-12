@@ -242,9 +242,11 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     ]
     
     for m in marcas:
-        fc = frentes_data['cao'].get(m, 0)
-        fg = frentes_data['gato'].get(m, 0)
-        fv = frentes_data['vet'].get(m, 0)
+       for m in marcas:
+        # Alterar de frentes_data para frentes_dados
+        fc = frentes_dados['cao'].get(m, 0)
+        fg = frentes_dados['gato'].get(m, 0)
+        fv = frentes_dados['vet'].get(m, 0)
         data_detalhe.append([Paragraph(m, style_celula), Paragraph(str(fc), style_celula), Paragraph(str(fg), style_celula), Paragraph(str(fv), style_celula)])
 
     t_detalhe = Table(data_detalhe, colWidths=[200, 120, 120, 120])
