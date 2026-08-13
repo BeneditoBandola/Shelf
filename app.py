@@ -40,8 +40,9 @@ def salvar_no_google_sheets(dados_auditoria):
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
         
-        # Leitura da credencial JSON bruta para evitar o erro "Invalid JWT Signature"
-        creds_dict = json.loads(st.secrets["google_credentials"])
+        # Leitura da credencial e limpeza forçada da Private Key
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
@@ -464,8 +465,9 @@ elif menu == "📊 Dados Benedito (Admin)":
             try:
                 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
                 
-                # Leitura da credencial JSON bruta para evitar o erro "Invalid JWT Signature"
-                creds_dict = json.loads(st.secrets["google_credentials"])
+                # Leitura da credencial e limpeza forçada da Private Key
+                creds_dict = dict(st.secrets["gcp_service_account"])
+                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
                 
                 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
                 client = gspread.authorize(creds)
