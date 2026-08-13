@@ -14,13 +14,13 @@ from reportlab.lib import colors
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-# Configuração da Página
+# --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Shelf Space Royal Canin", page_icon="🐾", layout="centered")
 
 st.title("🐾 Shelf Space Royal Canin")
 st.markdown("---")
 
-# 1. Carregar Planilha de Clientes Local
+# --- 1. CARREGAR PLANILHA DE CLIENTES ---
 @st.cache_data
 def load_clients():
     try:
@@ -55,245 +55,199 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     estilos = getSampleStyleSheet()
     style_celula = ParagraphStyle('EstiloCelula', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
     style_celula_cab = ParagraphStyle('EstiloCelulaCab', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
-
-    # Ajuste do Fuso Horário e Padrão de Data Brasileiro (DD/MM/AAAA)
+    
+    # Cores padronizadas para as tabelas
+    cor_cabecalho_principal = colors.HexColor('#1E3A8A')
+    cor_cabecalho_secundario = colors.HexColor('#059669')
+    
     fuso_sp = pytz.timezone('America/Sao_Paulo')
     agora = datetime.now(fuso_sp).strftime("%d/%m/%Y %H:%M")
-    
-    # ==========================================
-    # PÁGINA 1: RELATÓRIO EXECUTIVO (COMUM AOS DOIS)
-    # ==========================================
-    elem_comuns = []
-    elem_comuns.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
-    elem_comuns.append(Spacer(1, 5))
-    elem_comuns.append(Paragraph(f"<b>LOJA:</b> {loja} | <b>CIDADE:</b> {cidade}", estilos['Normal']))
-    elem_comuns.append(Paragraph(f"<b>ENDEREÇO:</b> {endereco}", estilos['Normal']))
-    elem_comuns.append(Paragraph(f"<b>PROMOTORA:</b> {promotora} | <b>DATA/HORA:</b> {agora}", estilos['Normal']))
-    elem_comuns.append(Paragraph(f"<b>NOTA FINAL DO PDV:</b> <font color='#1E3A8A'><b>{nota_total:.2f} / 10.0 pts</b></font>", estilos['Heading2']))
-    elem_comuns.append(Spacer(1, 10))
 
-    # Tabela 1: Resumo de Shares com Gráfico de Barras Colorido
-    elem_comuns.append(Paragraph("<b>1. PERFORMANCE DE SHARE POR PILAR</b>", estilos['Heading3']))
-    
-    data_share = [[
-        Paragraph("<b>Pilar</b>", style_celula_cab),
-        Paragraph("<b>Share Atual</b>", style_celula_cab),
-        Paragraph("<b>Meta</b>", style_celula_cab),
-        Paragraph("<b>Progresso Visual (Share vs Meta)</b>", style_celula_cab)
-    ]]
+    # Função interna para gerar a Página 1 (Executiva) intacta para ambos os PDFs
+    def criar_pagina_1():
+        elem = []
+        elem.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
+        elem.append(Spacer(1, 5))
+        elem.append(Paragraph(f"<b>LOJA:</b> {loja} | <b>CIDADE:</b> {cidade}", estilos['Normal']))
+        elem.append(Paragraph(f"<b>ENDEREÇO:</b> {endereco}", estilos['Normal']))
+        elem.append(Paragraph(f"<b>PROMOTORA:</b> {promotora} | <b>DATA/HORA:</b> {agora}", estilos['Normal']))
+        elem.append(Paragraph(f"<b>NOTA FINAL DO PDV:</b> <font color='#1E3A8A'><b>{nota_total:.2f} / 10.0 pts</b></font>", estilos['Heading2']))
+        elem.append(Spacer(1, 10))
 
-    shares = [
-        ("Linha Cão", dados_completos['share_cao'], 30.0),
-        ("Linha Gato", dados_completos['share_gato'], 35.0),
-        ("Linha Veterinária", dados_completos['share_vet'], 50.0)
-    ]
+        # Tabela 1: Resumo de Shares (Barra de Progresso com 10 Blocos Visuais)
+        elem.append(Paragraph("<b>1. PERFORMANCE DE SHARE POR PILAR</b>", estilos['Heading3']))
+        data_share = [[
+            Paragraph("<b>Pilar</b>", style_celula_cab),
+            Paragraph("<b>Share</b>", style_celula_cab),
+            Paragraph("<b>Meta</b>", style_celula_cab),
+            Paragraph("<b>Progresso (Visual Base 10)</b>", style_celula_cab)
+        ]]
 
-    for nome_pilar, val, meta in shares:
-        blocos_cheios = int(min(val, 100) / 5)
-        blocos_vazios = 20 - blocos_cheios
-        barra_visual = "█" * blocos_cheios + "░" * blocos_vazios
-        
-        # Corrigindo a cor e inserindo na barra
-        cor_txt = "#059669" if val >= meta else "#DC2626" # Verde se bater a meta, Vermelho se não bater
-        
-        data_share.append([
-            Paragraph(nome_pilar, style_celula),
-            Paragraph(f"<font color='{cor_txt}'><b>{val:.1f}%</b></font>", style_celula),
-            Paragraph(f"{meta:.1f}%", style_celula),
-            # A barra agora recebe a mesma cor dinamicamente:
-            Paragraph(f"<font name='Courier' size=9 color='{cor_txt}'>{barra_visual}</font>", style_celula)
-        ])
+        shares = [
+            ("Linha Cão", dados_completos['share_cao'], 30.0),
+            ("Linha Gato", dados_completos['share_gato'], 35.0),
+            ("Linha Veterinária", dados_completos['share_vet'], 50.0)
+        ]
 
-    t_share = Table(data_share, colWidths=[100, 70, 50, 340])
-    t_share.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
-    elem_comuns.append(t_share)
-    elem_comuns.append(Spacer(1, 10))
+        for nome_pilar, val, meta in shares:
+            # Lógica dos 10 blocos (ex: 30% / 10 = 3 blocos preenchidos)
+            blocos_cheios = int(min(val, 100) / 10)
+            blocos_vazios = 10 - blocos_cheios
+            barra_visual = "█" * blocos_cheios + "░" * blocos_vazios
+            
+            cor_txt = "#059669" if val >= meta else "#DC2626" 
+            
+            data_share.append([
+                Paragraph(nome_pilar, style_celula),
+                Paragraph(f"<font color='{cor_txt}'><b>{val:.1f}%</b></font>", style_celula),
+                Paragraph(f"{meta:.1f}%", style_celula),
+                Paragraph(f"<font name='Courier' size=10 color='{cor_txt}'>{barra_visual}</font>", style_celula)
+            ])
 
-    # Tabela 2: Execução e Pilares
-    elem_comuns.append(Paragraph("<b>2. CHECKLIST DE EXECUÇÃO (PLANOGRAMA & FLUXO)</b>", estilos['Heading3']))
-    data_exec = [
-        [Paragraph("<b>Pilar / Categoria</b>", style_celula_cab), Paragraph("<b>Planograma?</b>", style_celula_cab), Paragraph("<b>Abertura de Fluxo?</b>", style_celula_cab), Paragraph("<b>Regra Específica</b>", style_celula_cab)],
-        [Paragraph("Linha Cão", style_celula), Paragraph(dados_completos['plano_cao'], style_celula), Paragraph(dados_completos['fluxo_cao'], style_celula), Paragraph("Meta de Frentes >= 30%", style_celula)],
-        [Paragraph("Linha Gato", style_celula), Paragraph(dados_completos['plano_gato'], style_celula), Paragraph(dados_completos['fluxo_gato'], style_celula), Paragraph(f"Super Premium Separada: {dados_completos['sep_fhn']}", style_celula)],
-        [Paragraph("Linha Veterinária", style_celula), Paragraph(dados_completos['plano_vet'], style_celula), Paragraph(dados_completos['fluxo_vet'], style_celula), Paragraph("Meta de Frentes >= 50%", style_celula)],
-    ]
-    t_exec = Table(data_exec, colWidths=[110, 80, 95, 275])
-    t_exec.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#059669')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
-    elem_comuns.append(t_exec)
-    elem_comuns.append(Spacer(1, 10))
-
-    # Tabela 3: Merchandising e Pontos Extras
-    elem_comuns.append(Paragraph("<b>3. MERCHANDISING E PONTOS EXTRAS</b>", estilos['Heading3']))
-    materiais_str = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material encontrado"
-    data_merch = [
-        [Paragraph("<b>Descrição dos Elementos</b>", style_celula_cab), Paragraph("<b>Status / Quantidade</b>", style_celula_cab)],
-        [Paragraph("Materiais de Merchandising Presentes", style_celula), Paragraph(materiais_str, style_celula)],
-        [Paragraph("Estado de Conservação dos Materiais", style_celula), Paragraph(dados_completos['conservacao'], style_celula)],
-        [Paragraph("Quantidade de Pontos Extras no PDV", style_celula), Paragraph(str(dados_completos['qtd_extras']), style_celula)],
-    ]
-    t_merch = Table(data_merch, colWidths=[200, 360])
-    t_merch.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
-    elem_comuns.append(t_merch)
-    elem_comuns.append(Spacer(1, 10))
-
-    # Observações da Promotora (Se preenchido)
-    if dados_completos['observacoes']:
-        elem_comuns.append(Paragraph("<b>4. OBSERVAÇÕES / COMENTÁRIOS DA PROMOTORA</b>", estilos['Heading3']))
-        data_obs = [[Paragraph(dados_completos['observacoes'], style_celula)]]
-        t_obs = Table(data_obs, colWidths=[560])
-        t_obs.setStyle(TableStyle([
-            ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F3F4F6')),
-            ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')),
-            ('VALIGN', (0,0), (-1,-1), 'TOP'),
-            ('TOPPADDING', (0,0), (-1,-1), 6),
-            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ('LEFTPADDING', (0,0), (-1,-1), 6),
-            ('RIGHTPADDING', (0,0), (-1,-1), 6),
+        t_share = Table(data_share, colWidths=[100, 50, 40, 350])
+        t_share.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), cor_cabecalho_principal),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
         ]))
-        elem_comuns.append(t_obs)
-        elem_comuns.append(Spacer(1, 10))
+        elem.append(t_share)
+        elem.append(Spacer(1, 10))
 
-    # Relatório de Oportunidades de Melhoria (Automático)
-    elem_comuns.append(Paragraph("<b>5. PLANO DE AÇÃO E OPORTUNIDADES DE MELHORIA</b>", estilos['Heading3']))
-    
-    melhorias = []
-    if dados_completos['share_cao'] < 30.0:
-        melhorias.append("• <b>Linha Cão:</b> O share atual está abaixo da meta de 30%. É necessário negociar mais espaço na gôndola e recuperar frentes frente aos concorrentes.")
-    if dados_completos['plano_cao'] == "Não":
-        melhorias.append("• <b>Planograma Cão:</b> A linha não está respeitando o planograma oficial. Ajustar a disposição dos produtos.")
-    if dados_completos['fluxo_cao'] == "Não":
-        melhorias.append("• <b>Fluxo Cão:</b> A Royal Canin não está abrindo o fluxo principal. Realizar abordagem com o gerente da loja.")
-    
-    if dados_completos['share_gato'] < 35.0:
-        melhorias.append("• <b>Linha Gato:</b> O share está abaixo de 35%. Expandir frentes de focado em gatos.")
-    if dados_completos['plano_gato'] == "Não":
-        melhorias.append("• <b>Planograma Gato:</b> Ausente no planograma estabelecido. Necessário reorganizar a seção.")
-    if dados_completos['fluxo_gato'] == "Não":
-        melhorias.append("• <b>Fluxo Gato:</b> Royal Canin precisa abrir o fluxo de gatos no PDV.")
-    if dados_completos['sep_fhn'] == "Não":
-        melhorias.append("• <b>Super Premium Cat:</b> A linha Super Premium Cat não está separada da FHN. Executar o bolsão correto.")
+        # Tabela 2: Checklist Executivo
+        elem.append(Paragraph("<b>2. CHECKLIST DE EXECUÇÃO</b>", estilos['Heading3']))
+        data_exec = [
+            [Paragraph("<b>Pilar / Categoria</b>", style_celula_cab), Paragraph("<b>Planograma?</b>", style_celula_cab), Paragraph("<b>Abertura Fluxo?</b>", style_celula_cab), Paragraph("<b>Regra Específica</b>", style_celula_cab)],
+            [Paragraph("Linha Cão", style_celula), Paragraph(dados_completos['plano_cao'], style_celula), Paragraph(dados_completos['fluxo_cao'], style_celula), Paragraph("Meta de Frentes >= 30%", style_celula)],
+            [Paragraph("Linha Gato", style_celula), Paragraph(dados_completos['plano_gato'], style_celula), Paragraph(dados_completos['fluxo_gato'], style_celula), Paragraph(f"Super Premium Sep: {dados_completos['sep_fhn']}", style_celula)],
+            [Paragraph("Linha Veterinária", style_celula), Paragraph(dados_completos['plano_vet'], style_celula), Paragraph(dados_completos['fluxo_vet'], style_celula), Paragraph("Meta de Frentes >= 50%", style_celula)],
+        ]
+        t_exec = Table(data_exec, colWidths=[110, 80, 95, 255])
+        t_exec.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), cor_cabecalho_secundario),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        elem.append(t_exec)
+        elem.append(Spacer(1, 10))
 
-    if dados_completos['share_vet'] < 50.0:
-        melhorias.append("• <b>Linha Veterinária:</b> O share está abaixo de 50%. Fortalecer a presença de tratamento e prescrição.")
-    if dados_completos['plano_vet'] == "Não":
-        melhorias.append("• <b>Planograma Vet:</b> Linha Veterinária fora do planograma padrão.")
-    if dados_completos['fluxo_vet'] == "Não":
-        melhorias.append("• <b>Fluxo Vet:</b> Necessário abrir fluxo para os produtos veterinários.")
+        # Observações e Plano de Ação
+        if dados_completos['observacoes']:
+            elem.append(Paragraph("<b>3. OBSERVAÇÕES DA PROMOTORA</b>", estilos['Heading3']))
+            t_obs = Table([[Paragraph(dados_completos['observacoes'], style_celula)]], colWidths=[540])
+            t_obs.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor('#F3F4F6')), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#9CA3AF')), ('VALIGN', (0,0), (-1,-1), 'TOP')]))
+            elem.append(t_obs)
+            elem.append(Spacer(1, 10))
 
-    if dados_completos['conservacao'] == "Não":
-        melhorias.append("• <b>Conservação:</b> Os materiais de merchandising apresentam problemas de conservação e precisam ser substituídos ou higienizados.")
-    if len(dados_completos['materiais_ativos']) < 2:
-        melhorias.append("• <b>Merchandising:</b> Baixa presença de materiais de PDV (menos de 2 ativos). Instalar faixas, stoppers ou displays carona.")
-    if dados_completos['qtd_extras'] == 0:
-        melhorias.append("• <b>Pontos Extras:</b> Nenhum ponto extra localizado na loja. Negociar pontas de gôndola ou ilhas promocionais.")
+        elem.append(Paragraph("<b>4. PLANO DE AÇÃO (FEEDBACK AUTOMÁTICO)</b>", estilos['Heading3']))
+        melhorias = []
+        if dados_completos['share_cao'] < 30.0: melhorias.append("• <b>Linha Cão:</b> Abaixo da meta de 30%. Negociar espaço de gôndola.")
+        if dados_completos['plano_cao'] == "Não": melhorias.append("• <b>Planograma Cão:</b> Ajustar exposição oficial da linha.")
+        if dados_completos['fluxo_cao'] == "Não": melhorias.append("• <b>Fluxo Cão:</b> Abrir fluxo de abordagem no PDV.")
+        
+        if dados_completos['share_gato'] < 35.0: melhorias.append("• <b>Linha Gato:</b> Abaixo da meta de 35%. Expandir frentes focadas.")
+        if dados_completos['plano_gato'] == "Não": melhorias.append("• <b>Planograma Gato:</b> Reorganizar conforme o planograma.")
+        if dados_completos['fluxo_gato'] == "Não": melhorias.append("• <b>Fluxo Gato:</b> Necessário abrir fluxo na seção.")
+        if dados_completos['sep_fhn'] == "Não": melhorias.append("• <b>SP Cat:</b> Separar a linha Super Premium da linha FHN.")
+        
+        if dados_completos['share_vet'] < 50.0: melhorias.append("• <b>Linha Vet:</b> Abaixo de 50%. Fortalecer presença de tratamento.")
+        
+        if not melhorias: melhorias.append("• <b>Parabéns!</b> Execução impecável. Pilares atingindo as metas.")
+        
+        t_melhoria = Table([[Paragraph("<br/>".join(melhorias), style_celula)]], colWidths=[540])
+        t_melhoria.setStyle(TableStyle([('BACKGROUND', (0,0), (-1,0), colors.HexColor('#FEF3C7')), ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D97706'))]))
+        elem.append(t_melhoria)
+        
+        return elem
 
-    if not melhorias:
-        melhorias.append("• <b>Parabéns!</b> Excelente execução no PDV. Todos os pilares, shares e materiais estão atingindo ou superando as metas estabelecidas.")
+    # Função interna para gerar a Página 2 (Detalhamento - Apenas para o Completo)
+    def criar_pagina_2():
+        elem = []
+        elem.append(PageBreak())
+        elem.append(Paragraph("<b>ANEXO: MAPEAMENTO DETALHADO DO PDV</b>", estilos['Title']))
+        elem.append(Spacer(1, 10))
 
-    texto_melhorias = "<br/>".join(melhorias)
-    
-    data_melhoria = [[Paragraph(texto_melhorias, style_celula)]]
-    t_melhoria = Table(data_melhoria, colWidths=[560])
-    t_melhoria.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#FEF3C7')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#D97706')),
-        ('VALIGN', (0,0), (-1,-1), 'TOP'),
-        ('TOPPADDING', (0,0), (-1,-1), 6),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-        ('LEFTPADDING', (0,0), (-1,-1), 6),
-        ('RIGHTPADDING', (0,0), (-1,-1), 6),
-    ]))
-    elem_comuns.append(t_melhoria)
+        # Quadro 1: Consolidação de Frentes
+        elem.append(Paragraph("<b>1. DETALHAMENTO DE FRENTES POR MARCA</b>", estilos['Heading3']))
+        marcas = [
+            "Biofresh (BRF)", "Equilíbrio (ADM/Total)", "Fórmula Natural (Adimax)", 
+            "Hill's", "Pro Plan (Nestlé)", "Premier (Premier)", 
+            "Nattu (Premier)", "Vet Life (Farmina)", "N&D (Farmina)", "Royal Canin"
+        ]
+        
+        data_frentes = [[
+            Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), 
+            Paragraph("<b>Frentes Cão</b>", style_celula_cab), 
+            Paragraph("<b>Frentes Gato</b>", style_celula_cab), 
+            Paragraph("<b>Frentes Vet</b>", style_celula_cab)
+        ]]
+        
+        for m in marcas:
+            data_frentes.append([
+                Paragraph(m, style_celula), 
+                Paragraph(str(frentes_dados['cao'].get(m, 0)), style_celula),
+                Paragraph(str(frentes_dados['gato'].get(m, 0)), style_celula),
+                Paragraph(str(frentes_dados['vet'].get(m, 0)), style_celula)
+            ])
+            
+        t_frentes = Table(data_frentes, colWidths=[210, 110, 110, 110])
+        t_frentes.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), cor_cabecalho_principal),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+            ('ALIGN', (1,1), (-1,-1), 'CENTER'),
+        ]))
+        elem.append(t_frentes)
+        elem.append(Spacer(1, 15))
 
+        # Quadro 2: Checklist Declarado (O que a promotora marcou)
+        elem.append(Paragraph("<b>2. RESPOSTAS DO QUESTIONÁRIO DE AUDITORIA</b>", estilos['Heading3']))
+        
+        materiais_str = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material assinalado"
+        
+        data_respostas = [
+            [Paragraph("<b>Indicador Avaliado</b>", style_celula_cab), Paragraph("<b>Resposta Registrada</b>", style_celula_cab)],
+            [Paragraph("<b>Linha Cão:</b> Cumpre o Planograma?", style_celula), Paragraph(dados_completos['plano_cao'], style_celula)],
+            [Paragraph("<b>Linha Cão:</b> Abertura de Fluxo garantida?", style_celula), Paragraph(dados_completos['fluxo_cao'], style_celula)],
+            [Paragraph("<b>Linha Gato:</b> Cumpre o Planograma?", style_celula), Paragraph(dados_completos['plano_gato'], style_celula)],
+            [Paragraph("<b>Linha Gato:</b> Abertura de Fluxo garantida?", style_celula), Paragraph(dados_completos['fluxo_gato'], style_celula)],
+            [Paragraph("<b>Linha Gato:</b> Super Premium separada de FHN?", style_celula), Paragraph(dados_completos['sep_fhn'], style_celula)],
+            [Paragraph("<b>Linha Vet:</b> Cumpre o Planograma?", style_celula), Paragraph(dados_completos['plano_vet'], style_celula)],
+            [Paragraph("<b>Linha Vet:</b> Abertura de Fluxo garantida?", style_celula), Paragraph(dados_completos['fluxo_vet'], style_celula)],
+            [Paragraph("<b>Merchandising:</b> Estado de Conservação Adequado?", style_celula), Paragraph(dados_completos['conservacao'], style_celula)],
+            [Paragraph("<b>Merchandising:</b> Quantidade de Pontos Extras", style_celula), Paragraph(str(dados_completos['qtd_extras']), style_celula)],
+            [Paragraph("<b>Merchandising:</b> Materiais Presentes", style_celula), Paragraph(materiais_str, style_celula)],
+        ]
+        
+        t_respostas = Table(data_respostas, colWidths=[250, 290])
+        t_respostas.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), cor_cabecalho_secundario),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('TOPPADDING', (0,0), (-1,-1), 4),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 4),
+        ]))
+        elem.append(t_respostas)
 
-    # ==========================================
-    # PÁGINA 2: DETALHAMENTO (APENAS PDF COMPLETO)
-    # ==========================================
-    elem_detalhes = []
-    elem_detalhes.append(PageBreak())
-    elem_detalhes.append(Paragraph("<b>ANEXO: DETALHAMENTO POR MARCA E TIPO</b>", estilos['Title']))
-    elem_detalhes.append(Spacer(1, 10))
+        return elem
 
-    marcas = [
-        "Biofresh (BRF)", "Equilíbrio (ADM/Total)", "Fórmula Natural (Adimax)", 
-        "Hill's", "Pro Plan (Nestlé)", "Premier (Premier)", 
-        "Nattu (Premier)", "Vet Life (Farmina)", "N&D (Farmina)", "Royal Canin"
-    ]
-
-    estilo_tabela_frentes = TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('TOPPADDING', (0,0), (-1,-1), 4),
-        ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ])
-
-    # QUADRO 1: LINHA CÃO
-    elem_detalhes.append(Paragraph("<b>Frentes Encontradas - Linha CÃO</b>", estilos['Heading3']))
-    data_cao = [[Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Qtd Frentes</b>", style_celula_cab)]]
-    for m in marcas:
-        data_cao.append([Paragraph(m, style_celula), Paragraph(str(frentes_dados['cao'].get(m, 0)), style_celula)])
-    t_cao = Table(data_cao, colWidths=[200, 100])
-    t_cao.setStyle(estilo_tabela_frentes)
-    elem_detalhes.append(t_cao)
-    elem_detalhes.append(Spacer(1, 15))
-
-    # QUADRO 2: LINHA GATO
-    elem_detalhes.append(Paragraph("<b>Frentes Encontradas - Linha GATO</b>", estilos['Heading3']))
-    data_gato = [[Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Qtd Frentes</b>", style_celula_cab)]]
-    for m in marcas:
-        data_gato.append([Paragraph(m, style_celula), Paragraph(str(frentes_dados['gato'].get(m, 0)), style_celula)])
-    t_gato = Table(data_gato, colWidths=[200, 100])
-    t_gato.setStyle(estilo_tabela_frentes)
-    elem_detalhes.append(t_gato)
-    elem_detalhes.append(Spacer(1, 15))
-
-    # QUADRO 3: LINHA VETERINÁRIA
-    elem_detalhes.append(Paragraph("<b>Frentes Encontradas - Linha VET</b>", estilos['Heading3']))
-    data_vet = [[Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Qtd Frentes</b>", style_celula_cab)]]
-    for m in marcas:
-        data_vet.append([Paragraph(m, style_celula), Paragraph(str(frentes_dados['vet'].get(m, 0)), style_celula)])
-    t_vet = Table(data_vet, colWidths=[200, 100])
-    t_vet.setStyle(estilo_tabela_frentes)
-    elem_detalhes.append(t_vet)
-    elem_detalhes.append(Spacer(1, 15))
-
-    # QUADRO 4: DETALHAMENTO DE MATERIAIS E PONTOS EXTRAS
-    elem_detalhes.append(Paragraph("<b>Detalhamento de Execução e Materiais</b>", estilos['Heading3']))
-    materiais_selecionados = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material assinalado."
-    
-    elem_detalhes.append(Paragraph(f"<b>Quantidade de Pontos Extras:</b> {dados_completos['qtd_extras']}", estilos['Normal']))
-    elem_detalhes.append(Spacer(1, 5))
-    elem_detalhes.append(Paragraph(f"<b>Materiais Específicos Encontrados:</b> {materiais_selecionados}", estilos['Normal']))
-
-    # GERANDO OS DOIS ARQUIVOS
+    # Montagem Final dos Documentos
+    # 1. PDF Simples (Apenas Página 1)
     doc_simples = SimpleDocTemplate(arq_simples, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
-    doc_simples.build(elem_comuns)
+    doc_simples.build(criar_pagina_1())
 
+    # 2. PDF Completo (Página 1 + Quebra de Página + Página 2)
     doc_completo = SimpleDocTemplate(arq_completo, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
-    doc_completo.build(elem_comuns + elem_detalhes)
+    doc_completo.build(criar_pagina_1() + criar_pagina_2())
 
     return arq_simples, arq_completo
 
-# --- FUNÇÃO DE ENVIO DE E-MAIL (AGORA ACEITA MÚLTIPLOS PDFS) ---
+# --- FUNÇÃO DE ENVIO DE E-MAIL (MÚLTIPLOS PDFS) ---
 def enviar_email_auditoria(assunto, pdf_paths):
     remetente = "beneditobandola@gmail.com"
     senha = "kfih ccqx cskn oito"
@@ -303,7 +257,6 @@ def enviar_email_auditoria(assunto, pdf_paths):
     msg['From'], msg['To'], msg['Subject'] = remetente, destino, assunto
 
     try:
-        # Loop para anexar todos os PDFs na lista
         for pdf_path in pdf_paths:
             with open(pdf_path, "rb") as f:
                 part = MIMEApplication(f.read(), Name=os.path.basename(pdf_path))
@@ -319,7 +272,6 @@ def enviar_email_auditoria(assunto, pdf_paths):
     except Exception as e:
         print(f"Erro ao enviar e-mail: {e}")
         return False
-
 
 # --- FLUXO PRINCIPAL DO APP ---
 if df_clientes.empty:
