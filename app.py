@@ -39,7 +39,10 @@ df_clientes = load_clients()
 def salvar_no_google_sheets(dados_auditoria):
     try:
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # Leitura da credencial JSON bruta para evitar o erro "Invalid JWT Signature"
+        creds_dict = json.loads(st.secrets["google_credentials"])
+        
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         
@@ -456,12 +459,14 @@ elif menu == "📊 Dados Benedito (Admin)":
         st.success("Acesso Liberado!")
         st.markdown("### Consulta de Auditorias Anteriores")
         
-        # Função para puxar o banco de dados do Google Sheets
         @st.cache_data(ttl=30)
         def puxar_historico():
             try:
                 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-                creds_dict = dict(st.secrets["gcp_service_account"])
+                
+                # Leitura da credencial JSON bruta para evitar o erro "Invalid JWT Signature"
+                creds_dict = json.loads(st.secrets["google_credentials"])
+                
                 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
                 client = gspread.authorize(creds)
                 sheet = client.open("Historico_Auditorias_RoyalCanin").sheet1
@@ -476,14 +481,12 @@ elif menu == "📊 Dados Benedito (Admin)":
         df_historico = puxar_historico()
         
         if not df_historico.empty and len(df_historico.columns) >= 19:
-            # A coluna 3 guarda o nome da Loja
             lojas_disponiveis = sorted(df_historico[3].unique().tolist())
             loja_busca = st.selectbox("Selecione a Loja para buscar o histórico:", ["Selecione..."] + lojas_disponiveis)
             
             if loja_busca != "Selecione...":
                 df_loja = df_historico[df_historico[3] == loja_busca]
                 
-                # A coluna 0 guarda as datas das leituras
                 datas_disponiveis = df_loja[0].tolist() 
                 data_selecionada = st.selectbox("Selecione a data da auditoria:", datas_disponiveis)
                 
@@ -520,7 +523,6 @@ elif menu == "📊 Dados Benedito (Admin)":
                         qtd_pontos_extras = int(linha_dados[17])
                         observacoes = str(linha_dados[18])
 
-                        # Recalcular Shares com dados limpos
                         total_cao = sum(frentes_cao.values())
                         share_cao = (frentes_cao.get("Royal Canin", 0) / total_cao * 100) if total_cao > 0 else 0.0
                         
@@ -530,7 +532,6 @@ elif menu == "📊 Dados Benedito (Admin)":
                         total_vet = sum(frentes_vet.values())
                         share_vet = (frentes_vet.get("Royal Canin", 0) / total_vet * 100) if total_vet > 0 else 0.0
                         
-                        # Recalcular Nota Total (Nova Regra)
                         nota_total_nova = 0.0
                         
                         p_cao = 0.0
