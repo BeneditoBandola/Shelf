@@ -63,7 +63,7 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
     fuso_sp = pytz.timezone('America/Sao_Paulo')
     agora = datetime.now(fuso_sp).strftime("%d/%m/%Y %H:%M")
 
-    # Função interna para gerar a Página 1 (Executiva) intacta para ambos os PDFs
+    # Função interna para gerar a Página 1 (Executiva)
     def criar_pagina_1():
         elem = []
         elem.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
@@ -74,7 +74,7 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         elem.append(Paragraph(f"<b>NOTA FINAL DO PDV:</b> <font color='#1E3A8A'><b>{nota_total:.2f} / 10.0 pts</b></font>", estilos['Heading2']))
         elem.append(Spacer(1, 10))
 
-        # Tabela 1: Resumo de Shares (Barra de Progresso com 10 Blocos Visuais)
+        # Tabela 1: Resumo de Shares (Barra de Progresso Corrigida)
         elem.append(Paragraph("<b>1. PERFORMANCE DE SHARE POR PILAR</b>", estilos['Heading3']))
         data_share = [[
             Paragraph("<b>Pilar</b>", style_celula_cab),
@@ -90,10 +90,12 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         ]
 
         for nome_pilar, val, meta in shares:
-            # Lógica dos 10 blocos (ex: 30% / 10 = 3 blocos preenchidos)
-            blocos_cheios = int(min(val, 100) / 10)
+            # Arredondamento exato para a base 10
+            blocos_cheios = int(round(min(val, 100) / 10))
             blocos_vazios = 10 - blocos_cheios
-            barra_visual = "█" * blocos_cheios + "░" * blocos_vazios
+            
+            # Formatação visual com colchetes nas pontas
+            barra_visual = "[" + ("█" * blocos_cheios) + ("░" * blocos_vazios) + "]"
             
             cor_txt = "#059669" if val >= meta else "#DC2626" 
             
@@ -101,7 +103,7 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
                 Paragraph(nome_pilar, style_celula),
                 Paragraph(f"<font color='{cor_txt}'><b>{val:.1f}%</b></font>", style_celula),
                 Paragraph(f"{meta:.1f}%", style_celula),
-                Paragraph(f"<font name='Courier' size=10 color='{cor_txt}'>{barra_visual}</font>", style_celula)
+                Paragraph(f"<font name='Courier' size=11 color='{cor_txt}'>{barra_visual}</font>", style_celula)
             ])
 
         t_share = Table(data_share, colWidths=[100, 50, 40, 350])
@@ -163,7 +165,7 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         
         return elem
 
-    # Função interna para gerar a Página 2 (Detalhamento - Apenas para o Completo)
+    # Função interna para gerar a Página 2 (Detalhamento)
     def criar_pagina_2():
         elem = []
         elem.append(PageBreak())
@@ -205,7 +207,7 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         elem.append(t_frentes)
         elem.append(Spacer(1, 15))
 
-        # Quadro 2: Checklist Declarado (O que a promotora marcou)
+        # Quadro 2: Checklist Declarado
         elem.append(Paragraph("<b>2. RESPOSTAS DO QUESTIONÁRIO DE AUDITORIA</b>", estilos['Heading3']))
         
         materiais_str = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material assinalado"
@@ -237,11 +239,9 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         return elem
 
     # Montagem Final dos Documentos
-    # 1. PDF Simples (Apenas Página 1)
     doc_simples = SimpleDocTemplate(arq_simples, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
     doc_simples.build(criar_pagina_1())
 
-    # 2. PDF Completo (Página 1 + Quebra de Página + Página 2)
     doc_completo = SimpleDocTemplate(arq_completo, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
     doc_completo.build(criar_pagina_1() + criar_pagina_2())
 
