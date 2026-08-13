@@ -313,7 +313,6 @@ if menu == "📝 Área da Promotora":
                     "Nattu (Premier)", "Vet Life (Farmina)", "N&D (Farmina)", "Royal Canin"
                 ]
 
-                # --- PILAR: CÃO ---
                 st.markdown("### 🐶 Linha Cão (Meta: 30%)")
                 frentes_cao = {m: st.number_input(f"[Cão] Frentes - {m}", min_value=0, max_value=100, value=0, key=f"cao_{m}") for m in marcas}
                 total_cao = sum(frentes_cao.values())
@@ -324,7 +323,6 @@ if menu == "📝 Área da Promotora":
                 fluxo_cao = st.radio("Royal Canin está abrindo o Fluxo (Cão)?", ["Sim", "Não"], key="fluxo_cao")
 
                 st.markdown("---")
-                # --- PILAR: GATO ---
                 st.markdown("### 🐱 Linha Gato (Meta: 35%)")
                 frentes_gato = {m: st.number_input(f"[Gato] Frentes - {m}", min_value=0, max_value=100, value=0, key=f"gato_{m}") for m in marcas}
                 total_gato = sum(frentes_gato.values())
@@ -336,7 +334,6 @@ if menu == "📝 Área da Promotora":
                 sep_fhn = st.radio("Super Premium Cat está separada da linha FHN?", ["Sim", "Não"], key="sep_fhn")
 
                 st.markdown("---")
-                # --- PILAR: VETERINÁRIA ---
                 st.markdown("### 🩺 Linha Veterinária / Tratamento (Meta: 50%)")
                 frentes_vet = {m: st.number_input(f"[Vet] Frentes - {m}", min_value=0, max_value=100, value=0, key=f"vet_{m}") for m in marcas}
                 total_vet = sum(frentes_vet.values())
@@ -347,7 +344,6 @@ if menu == "📝 Área da Promotora":
                 fluxo_vet = st.radio("Royal Canin está abrindo o Fluxo (Vet)?", ["Sim", "Não"], key="fluxo_vet")
 
                 st.markdown("---")
-                # --- MÓDULO 4: MERCHANDISING ---
                 st.subheader("4. Merchandising e Presença de Materiais")
                 materiais = [
                     "Faixa de Gôndola", "Bobina Forração", "Display Carona", 
@@ -358,20 +354,16 @@ if menu == "📝 Área da Promotora":
                 conservacao = st.radio("Os materiais estão bem executados e em bom estado de conservação?", ["Sim", "Não"], key="conservacao")
 
                 st.markdown("---")
-                # --- MÓDULO 5: PONTOS EXTRAS ---
                 st.subheader("5. Pontos Extras Presentes")
                 qtd_pontos_extras = st.number_input("Quantidade de Pontos Extras encontrados:", min_value=0, max_value=10, value=0)
 
                 st.markdown("---")
-                # --- MÓDULO 6: OBSERVAÇÕES DA PROMOTORA ---
                 st.subheader("6. Observações e Comentários")
                 observacoes_promotora = st.text_area("Digite aqui qualquer observação relevante sobre o PDV:")
 
                 st.markdown("---")
-                # --- BOTÃO DE FINALIZAÇÃO ---
                 if st.button("Finalizar, Salvar e Enviar Auditoria", type="primary"):
                     nota_total = 0.0
-                    detalhes = []
 
                     p_cao = 0.0
                     if plano_cao == "Sim": p_cao += 1.0
@@ -458,20 +450,155 @@ elif menu == "📊 Dados Benedito (Admin)":
     st.markdown("Acesso restrito para consulta de histórico e reprocessamento de auditorias com regras atualizadas.")
     st.markdown("---")
     
-    # --- SENHA DE ACESSO ---
-    # Altere a palavra "1234" abaixo para a senha desejada
     senha = st.text_input("Digite a senha de administrador:", type="password")
     
-    if senha == "Minassal2026":
+    if senha == "1234":
         st.success("Acesso Liberado!")
         st.markdown("### Consulta de Auditorias Anteriores")
         
-        st.info("🚧 **Área em construção:** O sistema já começou a salvar os dados crus a partir de hoje. Em breve, você poderá usar esta barra de busca para localizar um cliente específico, revisar os números preenchidos pela promotora naquela data e clicar no botão 'Reenviar' para gerar novos PDFs aplicando a métrica de pontuação vigente.")
+        # Função para puxar o banco de dados do Google Sheets
+        @st.cache_data(ttl=30)
+        def puxar_historico():
+            try:
+                scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+                creds_dict = dict(st.secrets["gcp_service_account"])
+                creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+                client = gspread.authorize(creds)
+                sheet = client.open("Historico_Auditorias_RoyalCanin").sheet1
+                dados = sheet.get_all_values()
+                if dados:
+                    return pd.DataFrame(dados)
+                return pd.DataFrame()
+            except Exception as e:
+                st.error(f"Erro de conexão com o banco de dados: {e}")
+                return pd.DataFrame()
         
-        # Placeholder para a futura barra de pesquisa e botão de reenvio
-        loja_busca = st.text_input("Buscar cliente por Nome ou CNPJ:")
-        if st.button("Buscar Histórico"):
-            st.warning("A conexão de leitura do histórico no Google Sheets será ativada na próxima atualização.")
+        df_historico = puxar_historico()
+        
+        if not df_historico.empty and len(df_historico.columns) >= 19:
+            # A coluna 3 guarda o nome da Loja
+            lojas_disponiveis = sorted(df_historico[3].unique().tolist())
+            loja_busca = st.selectbox("Selecione a Loja para buscar o histórico:", ["Selecione..."] + lojas_disponiveis)
+            
+            if loja_busca != "Selecione...":
+                df_loja = df_historico[df_historico[3] == loja_busca]
+                
+                # A coluna 0 guarda as datas das leituras
+                datas_disponiveis = df_loja[0].tolist() 
+                data_selecionada = st.selectbox("Selecione a data da auditoria:", datas_disponiveis)
+                
+                st.info(f"Ao reprocessar a auditoria de {data_selecionada}, o sistema fará a leitura matemática novamente, recriando os PDFs e disparando um novo e-mail com as regras de pontuação atuais da matriz.")
+                
+                if st.button("Reprocessar e Reenviar Auditoria", type="primary"):
+                    linha_dados = df_loja[df_loja[0] == data_selecionada].iloc[0]
+                    
+                    try:
+                        promotora_hist = linha_dados[1]
+                        cidade_hist = linha_dados[2]
+                        
+                        endereco_hist = "Endereço não informado"
+                        if not df_clientes.empty:
+                            match_cliente = df_clientes[df_clientes['NOME'] == loja_busca]
+                            if not match_cliente.empty:
+                                endereco_hist = str(match_cliente.iloc[0].get('ENDEREÇO', 'Endereço não informado'))
+                        
+                        frentes_cao = json.loads(linha_dados[5])
+                        plano_cao = linha_dados[6]
+                        fluxo_cao = linha_dados[7]
+                        
+                        frentes_gato = json.loads(linha_dados[8])
+                        plano_gato = linha_dados[9]
+                        fluxo_gato = linha_dados[10]
+                        sep_fhn = linha_dados[11]
+                        
+                        frentes_vet = json.loads(linha_dados[12])
+                        plano_vet = linha_dados[13]
+                        fluxo_vet = linha_dados[14]
+                        
+                        materiais_ativos_lista = json.loads(linha_dados[15])
+                        conservacao = linha_dados[16]
+                        qtd_pontos_extras = int(linha_dados[17])
+                        observacoes = str(linha_dados[18])
+
+                        # Recalcular Shares com dados limpos
+                        total_cao = sum(frentes_cao.values())
+                        share_cao = (frentes_cao.get("Royal Canin", 0) / total_cao * 100) if total_cao > 0 else 0.0
+                        
+                        total_gato = sum(frentes_gato.values())
+                        share_gato = (frentes_gato.get("Royal Canin", 0) / total_gato * 100) if total_gato > 0 else 0.0
+                        
+                        total_vet = sum(frentes_vet.values())
+                        share_vet = (frentes_vet.get("Royal Canin", 0) / total_vet * 100) if total_vet > 0 else 0.0
+                        
+                        # Recalcular Nota Total (Nova Regra)
+                        nota_total_nova = 0.0
+                        
+                        p_cao = 0.0
+                        if plano_cao == "Sim": p_cao += 1.0
+                        if fluxo_cao == "Sim": p_cao += 1.0
+                        if share_cao >= 30.0: p_cao += 0.5
+                        nota_total_nova += p_cao
+
+                        p_gato = 0.0
+                        if plano_gato == "Sim": p_gato += 1.0
+                        if fluxo_gato == "Sim": p_gato += 1.0
+                        if share_gato >= 35.0: p_gato += 0.5
+                        if sep_fhn == "Sim": p_gato += 0.5
+                        nota_total_nova += p_gato
+
+                        p_vet = 0.0
+                        if plano_vet == "Sim": p_vet += 1.0
+                        if fluxo_vet == "Sim": p_vet += 1.0
+                        if share_vet >= 50.0: p_vet += 0.5
+                        nota_total_nova += p_vet
+
+                        total_materiais = len(materiais_ativos_lista)
+                        p_merch = 0.0
+                        if total_materiais >= 3: p_merch = 0.75
+                        elif total_materiais == 2: p_merch = 0.50
+                        elif total_materiais == 1: p_merch = 0.25
+                        nota_total_nova += p_merch
+
+                        p_cons = 0.25 if conservacao == "Sim" else 0.0
+                        nota_total_nova += p_cons
+
+                        p_extras = 0.0
+                        if qtd_pontos_extras >= 3: p_extras = 1.0
+                        elif qtd_pontos_extras == 2: p_extras = 0.5
+                        elif qtd_pontos_extras == 1: p_extras = 0.25
+                        nota_total_nova += p_extras
+                        
+                        dados_completos = {
+                            'share_cao': share_cao, 'plano_cao': plano_cao, 'fluxo_cao': fluxo_cao,
+                            'share_gato': share_gato, 'plano_gato': plano_gato, 'fluxo_gato': fluxo_gato, 'sep_fhn': sep_fhn,
+                            'share_vet': share_vet, 'plano_vet': plano_vet, 'fluxo_vet': fluxo_vet,
+                            'materiais_ativos': materiais_ativos_lista, 'conservacao': conservacao,
+                            'qtd_extras': qtd_pontos_extras, 'observacoes': observacoes
+                        }
+
+                        frentes_dados = {
+                            'cao': frentes_cao,
+                            'gato': frentes_gato,
+                            'vet': frentes_vet
+                        }
+                        
+                        with st.spinner("Reconstruindo análise e gerando novos PDFs..."):
+                            pdf_simples, pdf_completo = gerar_pdf_auditoria(
+                                promotora_hist, loja_busca, cidade_hist, endereco_hist, 
+                                dados_completos, nota_total_nova, frentes_dados
+                            )
+                            email_enviado = enviar_email_auditoria(f"🐾 RELATÓRIO SHELF SPACE (REPROCESSADO): {loja_busca}", [pdf_simples, pdf_completo])
+
+                        if email_enviado:
+                            st.success(f"Sucesso! A auditoria de {data_selecionada} foi recalculada e gerou a nova nota final de {nota_total_nova:.2f} pts. Os PDFs atualizados foram enviados para o seu e-mail!")
+                            st.balloons()
+                        else:
+                            st.warning("PDFs gerados com sucesso, mas ocorreu uma falha na hora de enviar o e-mail automático.")
+                            
+                    except Exception as e:
+                        st.error(f"Erro ao reprocessar: {e}. Isso geralmente ocorre se você selecionar uma leitura antiga (feita antes da atualização do sistema), pois ela não possui os dados JSON brutos das frentes.")
+        else:
+            st.info("O banco de dados ainda não possui registros estruturados. É necessário realizar novas auditorias no modo Promotora para que o histórico apareça aqui.")
 
     elif senha != "":
         st.error("Senha incorreta. Acesso negado.")
