@@ -3,6 +3,7 @@ import pandas as pd
 import unicodedata
 import os
 import smtplib
+import pytz
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
@@ -45,30 +46,34 @@ def salvar_no_google_sheets(dados_auditoria):
         print(f"Erro ao salvar no Google Sheets: {e}")
         return False
 
-# --- FUNÇÃO DE GERAÇÃO DE PDF ENRIQUECIDO COM 2 PÁGINAS ---
+# --- FUNÇÃO DE GERAÇÃO DE PDF (SIMPLES E COMPLETO) ---
 def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota_total, frentes_dados):
     loja_limpa = "".join([c for c in loja if c.isalnum() or c in (' ', '_', '-')]).strip().replace(' ', '_')
-    nome_arquivo = f"Auditoria_ShelfSpace_{loja_limpa}.pdf"
+    arq_simples = f"Auditoria_Simples_{loja_limpa}.pdf"
+    arq_completo = f"Auditoria_Completa_{loja_limpa}.pdf"
 
-    doc = SimpleDocTemplate(nome_arquivo, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
-    elementos, estilos = [], getSampleStyleSheet()
-    
+    estilos = getSampleStyleSheet()
     style_celula = ParagraphStyle('EstiloCelula', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.HexColor('#1F2937'))
     style_celula_cab = ParagraphStyle('EstiloCelulaCab', parent=estilos['Normal'], fontSize=8, leading=10, textColor=colors.white, fontName="Helvetica-Bold")
 
-    agora = "12/08/2026 16:38"
+    # Ajuste do Fuso Horário e Padrão de Data Brasileiro (DD/MM/AAAA)
+    fuso_sp = pytz.timezone('America/Sao_Paulo')
+    agora = datetime.now(fuso_sp).strftime("%d/%m/%Y %H:%M")
     
-    # --- PÁGINA 1: RELATÓRIO EXECUTIVO ORIGINAL ---
-    elementos.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
-    elementos.append(Spacer(1, 5))
-    elementos.append(Paragraph(f"<b>LOJA:</b> {loja} | <b>CIDADE:</b> {cidade}", estilos['Normal']))
-    elementos.append(Paragraph(f"<b>ENDEREÇO:</b> {endereco}", estilos['Normal']))
-    elementos.append(Paragraph(f"<b>PROMOTORA:</b> {promotora} | <b>DATA/HORA:</b> {agora}", estilos['Normal']))
-    elementos.append(Paragraph(f"<b>NOTA FINAL DO PDV:</b> <font color='#1E3A8A'><b>{nota_total:.2f} / 10.0 pts</b></font>", estilos['Heading2']))
-    elementos.append(Spacer(1, 10))
+    # ==========================================
+    # PÁGINA 1: RELATÓRIO EXECUTIVO (COMUM AOS DOIS)
+    # ==========================================
+    elem_comuns = []
+    elem_comuns.append(Paragraph("<b>RELATÓRIO EXECUTIVO - AUDITORIA SHELF SPACE</b>", estilos['Title']))
+    elem_comuns.append(Spacer(1, 5))
+    elem_comuns.append(Paragraph(f"<b>LOJA:</b> {loja} | <b>CIDADE:</b> {cidade}", estilos['Normal']))
+    elem_comuns.append(Paragraph(f"<b>ENDEREÇO:</b> {endereco}", estilos['Normal']))
+    elem_comuns.append(Paragraph(f"<b>PROMOTORA:</b> {promotora} | <b>DATA/HORA:</b> {agora}", estilos['Normal']))
+    elem_comuns.append(Paragraph(f"<b>NOTA FINAL DO PDV:</b> <font color='#1E3A8A'><b>{nota_total:.2f} / 10.0 pts</b></font>", estilos['Heading2']))
+    elem_comuns.append(Spacer(1, 10))
 
-    # Tabela 1: Resumo de Shares com Gráfico de Barras em Texto/Tabela
-    elementos.append(Paragraph("<b>1. PERFORMANCE DE SHARE POR PILAR</b>", estilos['Heading3']))
+    # Tabela 1: Resumo de Shares com Gráfico de Barras Colorido
+    elem_comuns.append(Paragraph("<b>1. PERFORMANCE DE SHARE POR PILAR</b>", estilos['Heading3']))
     
     data_share = [[
         Paragraph("<b>Pilar</b>", style_celula_cab),
@@ -87,13 +92,16 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         blocos_cheios = int(min(val, 100) / 5)
         blocos_vazios = 20 - blocos_cheios
         barra_visual = "█" * blocos_cheios + "░" * blocos_vazios
-        cor_txt = "green" if val >= meta else "red"
+        
+        # Corrigindo a cor e inserindo na barra
+        cor_txt = "#059669" if val >= meta else "#DC2626" # Verde se bater a meta, Vermelho se não bater
         
         data_share.append([
             Paragraph(nome_pilar, style_celula),
             Paragraph(f"<font color='{cor_txt}'><b>{val:.1f}%</b></font>", style_celula),
             Paragraph(f"{meta:.1f}%", style_celula),
-            Paragraph(f"<font name='Courier' size=8>{barra_visual}</font>", style_celula)
+            # A barra agora recebe a mesma cor dinamicamente:
+            Paragraph(f"<font name='Courier' size=9 color='{cor_txt}'>{barra_visual}</font>", style_celula)
         ])
 
     t_share = Table(data_share, colWidths=[100, 70, 50, 340])
@@ -104,11 +112,11 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
-    elementos.append(t_share)
-    elementos.append(Spacer(1, 10))
+    elem_comuns.append(t_share)
+    elem_comuns.append(Spacer(1, 10))
 
     # Tabela 2: Execução e Pilares
-    elementos.append(Paragraph("<b>2. CHECKLIST DE EXECUÇÃO (PLANOGRAMA & FLUXO)</b>", estilos['Heading3']))
+    elem_comuns.append(Paragraph("<b>2. CHECKLIST DE EXECUÇÃO (PLANOGRAMA & FLUXO)</b>", estilos['Heading3']))
     data_exec = [
         [Paragraph("<b>Pilar / Categoria</b>", style_celula_cab), Paragraph("<b>Planograma?</b>", style_celula_cab), Paragraph("<b>Abertura de Fluxo?</b>", style_celula_cab), Paragraph("<b>Regra Específica</b>", style_celula_cab)],
         [Paragraph("Linha Cão", style_celula), Paragraph(dados_completos['plano_cao'], style_celula), Paragraph(dados_completos['fluxo_cao'], style_celula), Paragraph("Meta de Frentes >= 30%", style_celula)],
@@ -123,11 +131,11 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
-    elementos.append(t_exec)
-    elementos.append(Spacer(1, 10))
+    elem_comuns.append(t_exec)
+    elem_comuns.append(Spacer(1, 10))
 
     # Tabela 3: Merchandising e Pontos Extras
-    elementos.append(Paragraph("<b>3. MERCHANDISING E PONTOS EXTRAS</b>", estilos['Heading3']))
+    elem_comuns.append(Paragraph("<b>3. MERCHANDISING E PONTOS EXTRAS</b>", estilos['Heading3']))
     materiais_str = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material encontrado"
     data_merch = [
         [Paragraph("<b>Descrição dos Elementos</b>", style_celula_cab), Paragraph("<b>Status / Quantidade</b>", style_celula_cab)],
@@ -143,12 +151,12 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
     ]))
-    elementos.append(t_merch)
-    elementos.append(Spacer(1, 10))
+    elem_comuns.append(t_merch)
+    elem_comuns.append(Spacer(1, 10))
 
     # Observações da Promotora (Se preenchido)
     if dados_completos['observacoes']:
-        elementos.append(Paragraph("<b>4. OBSERVAÇÕES / COMENTÁRIOS DA PROMOTORA</b>", estilos['Heading3']))
+        elem_comuns.append(Paragraph("<b>4. OBSERVAÇÕES / COMENTÁRIOS DA PROMOTORA</b>", estilos['Heading3']))
         data_obs = [[Paragraph(dados_completos['observacoes'], style_celula)]]
         t_obs = Table(data_obs, colWidths=[560])
         t_obs.setStyle(TableStyle([
@@ -160,11 +168,11 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
             ('LEFTPADDING', (0,0), (-1,-1), 6),
             ('RIGHTPADDING', (0,0), (-1,-1), 6),
         ]))
-        elementos.append(t_obs)
-        elementos.append(Spacer(1, 10))
+        elem_comuns.append(t_obs)
+        elem_comuns.append(Spacer(1, 10))
 
     # Relatório de Oportunidades de Melhoria (Automático)
-    elementos.append(Paragraph("<b>5. PLANO DE AÇÃO E OPORTUNIDADES DE MELHORIA (FEEDBACK AUTOMÁTICO)</b>", estilos['Heading3']))
+    elem_comuns.append(Paragraph("<b>5. PLANO DE AÇÃO E OPORTUNIDADES DE MELHORIA</b>", estilos['Heading3']))
     
     melhorias = []
     if dados_completos['share_cao'] < 30.0:
@@ -213,57 +221,80 @@ def gerar_pdf_auditoria(promotora, loja, cidade, endereco, dados_completos, nota
         ('LEFTPADDING', (0,0), (-1,-1), 6),
         ('RIGHTPADDING', (0,0), (-1,-1), 6),
     ]))
-    elementos.append(t_melhoria)
+    elem_comuns.append(t_melhoria)
 
-    # --- QUEBRA DE PÁGINA PARA O DETALHAMENTO ---
-    elementos.append(PageBreak())
 
-    # --- PÁGINA 2: MEMÓRIA DE CÁLCULO E FRENTES POR MARCA ---
-    elementos.append(Paragraph("<b>ANEXO: MEMÓRIA DE CÁLCULO E FRENTES POR MARCA</b>", estilos['Title']))
-    elementos.append(Spacer(1, 5))
-    elementos.append(Paragraph("Este anexo detalha a contagem física de frentes coletada por marca em cada pilar e demonstra a fórmula matemática aplicada para chegar aos percentuais de *share* apresentados na primeira página.", estilos['Normal']))
-    elementos.append(Spacer(1, 10))
+    # ==========================================
+    # PÁGINA 2: DETALHAMENTO (APENAS PDF COMPLETO)
+    # ==========================================
+    elem_detalhes = []
+    elem_detalhes.append(PageBreak())
+    elem_detalhes.append(Paragraph("<b>ANEXO: DETALHAMENTO POR MARCA E TIPO</b>", estilos['Title']))
+    elem_detalhes.append(Spacer(1, 10))
 
-    elementos.append(Paragraph("<b>Fórmula de Cálculo do Share:</b>", estilos['Heading3']))
-    formula_texto = "<i>Share (%) = (Frentes da Royal Canin / Total de Frentes de Todas as Marcas do Pilar) × 100</i>"
-    elementos.append(Paragraph(formula_texto, estilos['Normal']))
-    elementos.append(Spacer(1, 10))
-
-    elementos.append(Paragraph("<b>Detalhamento de Frentes por Marca e Pilar</b>", estilos['Heading3']))
-    
-    data_detalhe = [
-        [Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Frentes - Cão</b>", style_celula_cab), Paragraph("<b>Frentes - Gato</b>", style_celula_cab), Paragraph("<b>Frentes - Vet</b>", style_celula_cab)]
-    ]
-    
     marcas = [
         "Biofresh (BRF)", "Equilíbrio (ADM/Total)", "Fórmula Natural (Adimax)", 
         "Hill's", "Pro Plan (Nestlé)", "Premier (Premier)", 
         "Nattu (Premier)", "Vet Life (Farmina)", "N&D (Farmina)", "Royal Canin"
     ]
-    
-    for m in marcas:
-       for m in marcas:
-        # Alterar de frentes_data para frentes_dados
-        fc = frentes_dados['cao'].get(m, 0)
-        fg = frentes_dados['gato'].get(m, 0)
-        fv = frentes_dados['vet'].get(m, 0)
-        data_detalhe.append([Paragraph(m, style_celula), Paragraph(str(fc), style_celula), Paragraph(str(fg), style_celula), Paragraph(str(fv), style_celula)])
 
-    t_detalhe = Table(data_detalhe, colWidths=[200, 120, 120, 120])
-    t_detalhe.setStyle(TableStyle([
+    estilo_tabela_frentes = TableStyle([
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1E3A8A')),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ('TOPPADDING', (0,0), (-1,-1), 4),
         ('BOTTOMPADDING', (0,0), (-1,-1), 4),
-    ]))
-    elementos.append(t_detalhe)
+    ])
 
-    doc.build(elementos)
-    return nome_arquivo
+    # QUADRO 1: LINHA CÃO
+    elem_detalhes.append(Paragraph("<b>Frentes Encontradas - Linha CÃO</b>", estilos['Heading3']))
+    data_cao = [[Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Qtd Frentes</b>", style_celula_cab)]]
+    for m in marcas:
+        data_cao.append([Paragraph(m, style_celula), Paragraph(str(frentes_dados['cao'].get(m, 0)), style_celula)])
+    t_cao = Table(data_cao, colWidths=[200, 100])
+    t_cao.setStyle(estilo_tabela_frentes)
+    elem_detalhes.append(t_cao)
+    elem_detalhes.append(Spacer(1, 15))
 
-# --- FUNÇÃO DE ENVIO DE E-MAIL ---
-def enviar_email_auditoria(assunto, pdf_path):
+    # QUADRO 2: LINHA GATO
+    elem_detalhes.append(Paragraph("<b>Frentes Encontradas - Linha GATO</b>", estilos['Heading3']))
+    data_gato = [[Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Qtd Frentes</b>", style_celula_cab)]]
+    for m in marcas:
+        data_gato.append([Paragraph(m, style_celula), Paragraph(str(frentes_dados['gato'].get(m, 0)), style_celula)])
+    t_gato = Table(data_gato, colWidths=[200, 100])
+    t_gato.setStyle(estilo_tabela_frentes)
+    elem_detalhes.append(t_gato)
+    elem_detalhes.append(Spacer(1, 15))
+
+    # QUADRO 3: LINHA VETERINÁRIA
+    elem_detalhes.append(Paragraph("<b>Frentes Encontradas - Linha VET</b>", estilos['Heading3']))
+    data_vet = [[Paragraph("<b>Marca / Concorrente</b>", style_celula_cab), Paragraph("<b>Qtd Frentes</b>", style_celula_cab)]]
+    for m in marcas:
+        data_vet.append([Paragraph(m, style_celula), Paragraph(str(frentes_dados['vet'].get(m, 0)), style_celula)])
+    t_vet = Table(data_vet, colWidths=[200, 100])
+    t_vet.setStyle(estilo_tabela_frentes)
+    elem_detalhes.append(t_vet)
+    elem_detalhes.append(Spacer(1, 15))
+
+    # QUADRO 4: DETALHAMENTO DE MATERIAIS E PONTOS EXTRAS
+    elem_detalhes.append(Paragraph("<b>Detalhamento de Execução e Materiais</b>", estilos['Heading3']))
+    materiais_selecionados = ", ".join(dados_completos['materiais_ativos']) if dados_completos['materiais_ativos'] else "Nenhum material assinalado."
+    
+    elem_detalhes.append(Paragraph(f"<b>Quantidade de Pontos Extras:</b> {dados_completos['qtd_extras']}", estilos['Normal']))
+    elem_detalhes.append(Spacer(1, 5))
+    elem_detalhes.append(Paragraph(f"<b>Materiais Específicos Encontrados:</b> {materiais_selecionados}", estilos['Normal']))
+
+    # GERANDO OS DOIS ARQUIVOS
+    doc_simples = SimpleDocTemplate(arq_simples, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
+    doc_simples.build(elem_comuns)
+
+    doc_completo = SimpleDocTemplate(arq_completo, pagesize=A4, rightMargin=25, leftMargin=25, topMargin=25, bottomMargin=25)
+    doc_completo.build(elem_comuns + elem_detalhes)
+
+    return arq_simples, arq_completo
+
+# --- FUNÇÃO DE ENVIO DE E-MAIL (AGORA ACEITA MÚLTIPLOS PDFS) ---
+def enviar_email_auditoria(assunto, pdf_paths):
     remetente = "beneditobandola@gmail.com"
     senha = "kfih ccqx cskn oito"
     destino = "benedito.bandola@minassal.com.br"
@@ -272,10 +303,12 @@ def enviar_email_auditoria(assunto, pdf_path):
     msg['From'], msg['To'], msg['Subject'] = remetente, destino, assunto
 
     try:
-        with open(pdf_path, "rb") as f:
-            part = MIMEApplication(f.read(), Name=os.path.basename(pdf_path))
-            part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(pdf_path))
-            msg.attach(part)
+        # Loop para anexar todos os PDFs na lista
+        for pdf_path in pdf_paths:
+            with open(pdf_path, "rb") as f:
+                part = MIMEApplication(f.read(), Name=os.path.basename(pdf_path))
+                part.add_header('Content-Disposition', 'attachment', filename=os.path.basename(pdf_path))
+                msg.attach(part)
         
         s = smtplib.SMTP('smtp.gmail.com', 587)
         s.starttls()
@@ -286,6 +319,7 @@ def enviar_email_auditoria(assunto, pdf_path):
     except Exception as e:
         print(f"Erro ao enviar e-mail: {e}")
         return False
+
 
 # --- FLUXO PRINCIPAL DO APP ---
 if df_clientes.empty:
@@ -454,19 +488,21 @@ else:
                     'vet': frentes_vet
                 }
 
-                data_atual = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+                # Fuso horário para gravação na Planilha
+                fuso_sp = pytz.timezone('America/Sao_Paulo')
+                data_atual = datetime.now(fuso_sp).strftime("%d/%m/%Y %H:%M:%S")
                 linha_dados = [data_atual, promotora, cidade_loja, loja_selecionada, f"{nota_total:.2f}"]
 
-                with st.spinner("Salvando na planilha, gerando PDF executivo (2 páginas) e enviando e-mail..."):
+                with st.spinner("Salvando na planilha, gerando PDFs e enviando e-mail..."):
                     salvar_no_google_sheets(linha_dados)
-                    pdf_gerado = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, endereco_loja, dados_completos, nota_total, frentes_dados)
-                    email_enviado = enviar_email_auditoria(f"🐾 RELATÓRIO SHELF SPACE: {loja_selecionada}", pdf_gerado)
+                    pdf_simples, pdf_completo = gerar_pdf_auditoria(promotora, loja_selecionada, cidade_loja, endereco_loja, dados_completos, nota_total, frentes_dados)
+                    email_enviado = enviar_email_auditoria(f"🐾 RELATÓRIO SHELF SPACE: {loja_selecionada}", [pdf_simples, pdf_completo])
 
                 if email_enviado:
-                    st.success("Auditoria salva na planilha, PDF executivo gerado com o anexo e e-mail enviado com sucesso!")
+                    st.success("Auditoria salva na planilha, PDFs Gerados (Simples e Completo) e e-mail enviado com sucesso!")
                     st.balloons()
                 else:
-                    st.warning("Auditoria salva e PDF gerado, mas houve uma falha ao enviar o e-mail automático.")
+                    st.warning("Auditoria salva e PDFs gerados, mas houve uma falha ao enviar o e-mail automático.")
 
                 st.metric(label="Nota Total do PDV", value=f"{nota_total:.2f} / 10.0 pts")
         else:
