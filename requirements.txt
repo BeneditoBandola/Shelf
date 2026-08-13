@@ -1,6 +1,7 @@
 streamlit
 pandas
 openpyxl
+pytz
 reportlab
 gspread
 oauth2client
